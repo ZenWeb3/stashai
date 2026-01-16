@@ -115,3 +115,38 @@ export interface GoalProgress {
   progress: number; // percentage
   remaining: number;
 }
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  created_at: string;
+  metadata?: {
+    full_name?: string;
+    avatar_url?: string;
+    preferences?: {
+      currency?: string;
+      notifications_enabled?: boolean;
+    };
+  };
+}
+
+export interface UserStats {
+  total_income: number;
+  total_goals: number;
+  account_age_days: number;
+  last_activity: string;
+}
+
+export interface UserResponse {
+  profile: UserProfile;
+  stats: UserStats;
+}
+
+export interface UpdateUserInput {
+  full_name?: string;
+  avatar_url?: string;
+  preferences?: {
+    currency?: string;
+    notifications_enabled?: boolean;
+  };
+}
