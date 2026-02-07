@@ -41,4 +41,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-test-user-api
+test-user-api.js*
+test-supase-connection.js*
