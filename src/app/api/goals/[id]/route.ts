@@ -1,47 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase, createSupabaseClient } from "@/lib/supabase";
-``;
-async function getUserAndClient(request: NextRequest) {
-  const authHeader = request.headers.get("authorization");
-
-  if (!authHeader) {
-    return null;
-  }
-
-  const token = authHeader.replace("Bearer ", "");
-
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser(token);
-
-  if (error || !user) {
-    return null;
-  }
-
-  const userClient = createSupabaseClient(token);
-
-  return { user, client: userClient };
-}
+import { getAuthenticatedUser } from "@/lib/supabase/auth-helper";
 
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const result = await getUserAndClient(request);
+    const auth = await getAuthenticatedUser();
 
-    if (!result) {
+    if (!auth) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
       );
     }
 
-    const { user, client } = result;
+    const { user, supabase } = auth;
     const { id } = await context.params;
 
-    const { data, error } = await client
+    const { data, error } = await supabase
       .from("goals")
       .select("*")
       .eq("id", id)
@@ -81,22 +58,21 @@ export async function PUT(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const result = await getUserAndClient(request);
+    const auth = await getAuthenticatedUser();
 
-    if (!result) {
+    if (!auth) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
       );
     }
 
-    const { user, client } = result;
+    const { user, supabase } = auth;
     const { id } = await context.params;
 
     const body = await request.json();
     const { name, target_amount, current_amount, deadline, status } = body;
 
-    // Validate amounts if provided
     if (target_amount !== undefined && target_amount <= 0) {
       return NextResponse.json(
         { success: false, error: "Target amount must be positive" },
@@ -111,8 +87,8 @@ export async function PUT(
       );
     }
 
-    // First, get the current goal to calculate final amounts
-    const { data: currentGoal, error: fetchError } = await client
+    // Get current goal
+    const { data: currentGoal, error: fetchError } = await supabase
       .from("goals")
       .select("current_amount, target_amount")
       .eq("id", id)
@@ -134,21 +110,15 @@ export async function PUT(
     if (deadline !== undefined) updates.deadline = deadline;
     if (status) updates.status = status;
 
-    // Calculate final amounts (use new value if provided, else keep current)
-    const finalCurrent =
-      current_amount !== undefined
-        ? current_amount
-        : currentGoal.current_amount;
-    const finalTarget =
-      target_amount !== undefined ? target_amount : currentGoal.target_amount;
+    const finalCurrent = current_amount ?? currentGoal.current_amount;
+    const finalTarget = target_amount ?? currentGoal.target_amount;
 
     // Auto-complete if goal is reached
     if (finalCurrent >= finalTarget) {
       updates.status = "completed";
     }
 
-    // Update in database
-    const { data, error } = await client
+    const { data, error } = await supabase
       .from("goals")
       .update(updates)
       .eq("id", id)
@@ -163,7 +133,6 @@ export async function PUT(
       );
     }
 
-    // Add progress percentage
     const goalWithProgress = {
       ...data,
       progress:
@@ -190,19 +159,19 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const result = await getUserAndClient(request);
+    const auth = await getAuthenticatedUser();
 
-    if (!result) {
+    if (!auth) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
       );
     }
 
-    const { user, client } = result;
+    const { user, supabase } = auth;
     const { id } = await context.params;
 
-    const { error } = await client
+    const { error } = await supabase
       .from("goals")
       .delete()
       .eq("id", id)

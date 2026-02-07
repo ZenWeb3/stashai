@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase, createSupabaseClient } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
 import type { ApiResponse } from "@/types";
 
 interface DashboardStats {
@@ -17,19 +17,10 @@ export async function GET(
   request: NextRequest
 ): Promise<NextResponse<ApiResponse<DashboardStats>>> {
   try {
-    const authHeader = request.headers.get("authorization");
-    if (!authHeader) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    const token = authHeader.replace("Bearer ", "");
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser(token);
+    const supabase = await createClient();
+    
+    // Get user from session (cookies handle auth automatically)
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
       return NextResponse.json(
@@ -38,12 +29,11 @@ export async function GET(
       );
     }
 
-    const client = createSupabaseClient(token);
-
+    // Now use the same client — RLS will filter by user automatically
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const { data: incomeData } = await client
+    const { data: incomeData } = await supabase
       .from("income")
       .select("*")
       .eq("user_id", user.id)
@@ -54,6 +44,7 @@ export async function GET(
       incomeData?.reduce((sum, income) => sum + Number(income.amount), 0) || 0;
     const incomeCount = incomeData?.length || 0;
 
+    // Calculate top source
     const sourceCounts: Record<string, number> = {};
     incomeData?.forEach((income) => {
       sourceCounts[income.source] =
@@ -64,7 +55,8 @@ export async function GET(
         ? Object.entries(sourceCounts).sort((a, b) => b[1] - a[1])[0][0]
         : null;
 
-    const { data: goalsData } = await client
+    // Fetch goals
+    const { data: goalsData } = await supabase
       .from("goals")
       .select("*")
       .eq("user_id", user.id);
@@ -74,8 +66,7 @@ export async function GET(
     const completedGoalsCount =
       goalsData?.filter((g) => g.status === "completed").length || 0;
     const totalSaved =
-      goalsData?.reduce((sum, goal) => sum + Number(goal.current_amount), 0) ||
-      0;
+      goalsData?.reduce((sum, goal) => sum + Number(goal.current_amount), 0) || 0;
 
     const savingsRate =
       totalIncome > 0 ? Math.round((totalSaved / totalIncome) * 100) : 0;

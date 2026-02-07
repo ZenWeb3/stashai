@@ -1,48 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase, createSupabaseClient } from "@/lib/supabase";
-
-async function getUserAndClient(request: NextRequest) {
-  const authHeader = request.headers.get("authorization");
-
-  if (!authHeader) {
-    return null;
-  }
-
-  const token = authHeader.replace("Bearer ", "");
-
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser(token);
-
-  if (error || !user) {
-    return null;
-  }
-
-  const userClient = createSupabaseClient(token);
-
-  return { user, client: userClient };
-}
+import { getAuthenticatedUser } from "@/lib/supabase/auth-helper";
 
 export async function GET(request: NextRequest) {
   try {
-    const result = await getUserAndClient(request);
+    const auth = await getAuthenticatedUser();
 
-    if (!result) {
+    if (!auth) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
       );
     }
 
-    const { user, client } = result;
+    const { user, supabase } = auth;
 
     const { searchParams } = request.nextUrl;
     const source = searchParams.get("source");
     const startDate = searchParams.get("start_date");
     const endDate = searchParams.get("end_date");
 
-    let query = client
+    let query = supabase
       .from("income")
       .select("*")
       .eq("user_id", user.id)
@@ -83,16 +60,16 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const result = await getUserAndClient(request);
+    const auth = await getAuthenticatedUser();
 
-    if (!result) {
+    if (!auth) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
       );
     }
 
-    const { user, client } = result;
+    const { user, supabase } = auth;
 
     const body = await request.json();
     const { amount, source, date, notes } = body;
@@ -111,24 +88,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const validSources = [
-      "hackathon",
-      "bounty",
-      "freelance",
-      "crypto",
-      "other",
-    ];
+    const validSources = ["hackathon", "bounty", "freelance", "crypto", "other"];
     if (!validSources.includes(source)) {
       return NextResponse.json(
-        {
-          success: false,
-          error: `Source must be one of: ${validSources.join(", ")}`,
-        },
+        { success: false, error: `Source must be one of: ${validSources.join(", ")}` },
         { status: 400 }
       );
     }
 
-    const { data, error } = await client
+    const { data, error } = await supabase
       .from("income")
       .insert({
         user_id: user.id,
@@ -149,10 +117,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      {
-        success: true,
-        data,
-      },
+      { success: true, data },
       { status: 201 }
     );
   } catch (error) {

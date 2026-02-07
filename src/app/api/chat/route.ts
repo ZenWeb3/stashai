@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase, createSupabaseClient } from "@/lib/supabase";
+import { getAuthenticatedUser } from "@/lib/supabase/auth-helper";
 import {
   GoogleGenerativeAI,
   SchemaType,
   type FunctionDeclaration,
 } from "@google/generative-ai";
-import type { SupabaseClient, User } from "@supabase/supabase-js";
 import type {
   Income,
   Goal,
   ChatMessage,
-  SendMessageInput,
   ChatResponse,
   ApiResponse,
   IncomeSource,
@@ -26,18 +24,12 @@ interface ChatRequestInput {
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-// Security: Maximum limits to prevent abuse
 const SECURITY_LIMITS = {
-  MAX_INCOME_AMOUNT: 100000, // $100k max per entry
-  MAX_GOAL_UPDATE: 50000, // $50k max per update
-  MIN_AMOUNT: 0.01, // Minimum $0.01
-  MAX_ACTIONS_PER_MESSAGE: 3, // Max 3 function calls per message
+  MAX_INCOME_AMOUNT: 100000,
+  MAX_GOAL_UPDATE: 50000,
+  MIN_AMOUNT: 0.01,
+  MAX_ACTIONS_PER_MESSAGE: 3,
 };
-
-interface UserAndClient {
-  user: User;
-  client: SupabaseClient;
-}
 
 interface GoalWithProgress {
   name: string;
@@ -63,8 +55,7 @@ const functions: FunctionDeclaration[] = [
       properties: {
         amount: {
           type: SchemaType.NUMBER,
-          description:
-            "The income amount in dollars (must be between 0.01 and 100000)",
+          description: "The income amount (must be between 0.01 and 100000)",
         },
         source: {
           type: SchemaType.STRING,
@@ -86,20 +77,17 @@ const functions: FunctionDeclaration[] = [
   },
   {
     name: "update_goal_progress",
-    description:
-      "Add or subtract money from a goal's current savings. Use when user allocates money to a goal.",
+    description: "Add or subtract money from a goal's current savings.",
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
         goal_name: {
           type: SchemaType.STRING,
-          description:
-            "The name of the goal to update (must match existing goal name)",
+          description: "The name of the goal to update",
         },
         amount_to_add: {
           type: SchemaType.NUMBER,
-          description:
-            "The amount to add (positive) or subtract (negative). Must be between -50000 and 50000.",
+          description: "The amount to add (positive) or subtract (negative).",
         },
       },
       required: ["goal_name", "amount_to_add"],
@@ -107,32 +95,14 @@ const functions: FunctionDeclaration[] = [
   },
 ];
 
-async function getUserAndClient(
-  request: NextRequest
-): Promise<UserAndClient | null> {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader) return null;
-
-  const token = authHeader.replace("Bearer ", "");
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser(token);
-
-  if (error || !user) return null;
-
-  const userClient = createSupabaseClient(token);
-  return { user, client: userClient };
-}
-
 async function getUserContext(
-  client: SupabaseClient,
-  userId: string
+  supabase: any,
+  userId: string,
 ): Promise<UserContext> {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-  const { data: recentIncome } = await client
+  const { data: recentIncome } = await supabase
     .from("income")
     .select("*")
     .eq("user_id", userId)
@@ -142,10 +112,10 @@ async function getUserContext(
   const totalIncome =
     recentIncome?.reduce(
       (sum: number, income: Income) => sum + Number(income.amount),
-      0
+      0,
     ) || 0;
 
-  const { data: activeGoals } = await client
+  const { data: activeGoals } = await supabase
     .from("goals")
     .select("*")
     .eq("user_id", userId)
@@ -171,21 +141,13 @@ async function getUserContext(
 function validateAmount(
   amount: number,
   maxLimit: number,
-  context: string
+  context: string,
 ): string | null {
-  if (typeof amount !== "number" || isNaN(amount)) {
+  if (typeof amount !== "number" || isNaN(amount))
     return `${context}: Amount must be a valid number`;
-  }
-  if (amount < SECURITY_LIMITS.MIN_AMOUNT) {
-    return `${context}: Amount must be at least $${SECURITY_LIMITS.MIN_AMOUNT}`;
-  }
-  if (amount > maxLimit) {
-    return `${context}: Amount cannot exceed $${maxLimit}`;
-  }
-  const decimalPlaces = (amount.toString().split(".")[1] || "").length;
-  if (decimalPlaces > 2) {
-    return `${context}: Amount can only have up to 2 decimal places`;
-  }
+  if (amount < SECURITY_LIMITS.MIN_AMOUNT)
+    return `${context}: Amount must be at least ₦${SECURITY_LIMITS.MIN_AMOUNT}`;
+  if (amount > maxLimit) return `${context}: Amount cannot exceed ₦${maxLimit}`;
   return null;
 }
 
@@ -201,80 +163,51 @@ function validateSource(source: string): source is IncomeSource {
 }
 
 function validateDate(dateStr: string): string | null {
-  if (!dateStr) {
-    return new Date().toISOString().split("T")[0];
-  }
+  if (!dateStr) return new Date().toISOString().split("T")[0];
 
   const date = new Date(dateStr);
   const today = new Date();
   const oneYearAgo = new Date();
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
 
-  if (isNaN(date.getTime())) {
-    return null;
-  }
-
-  if (date > today || date < oneYearAgo) {
-    return null;
-  }
-
+  if (isNaN(date.getTime()) || date > today || date < oneYearAgo) return null;
   return dateStr;
 }
 
 async function executeFunctionCall(
   functionName: string,
   args: any,
-  client: SupabaseClient,
-  userId: string
+  supabase: any,
+  userId: string,
 ): Promise<string> {
   try {
-    if (!["add_income", "update_goal_progress"].includes(functionName)) {
-      return `Security Error: Invalid function "${functionName}"`;
-    }
-
     if (functionName === "add_income") {
       const { amount, source, date, notes } = args;
 
       const amountError = validateAmount(
         amount,
         SECURITY_LIMITS.MAX_INCOME_AMOUNT,
-        "Income"
+        "Income",
       );
-      if (amountError) {
-        return `Error: ${amountError}`;
-      }
+      if (amountError) return `Error: ${amountError}`;
 
       if (!validateSource(source)) {
         return `Error: Invalid income source. Must be one of: hackathon, bounty, freelance, crypto, other`;
       }
 
       const validDate = validateDate(date);
-      if (!validDate) {
-        return `Error: Invalid date. Date must be within the last year and not in the future`;
-      }
+      if (!validDate) return `Error: Invalid date`;
 
-      const sanitizedNotes = notes ? String(notes).substring(0, 500) : null;
+      const { error } = await supabase.from("income").insert({
+        user_id: userId,
+        amount: Number(amount.toFixed(2)),
+        source,
+        date: validDate,
+        notes: notes ? String(notes).substring(0, 500) : null,
+      });
 
-      const { data, error } = await client
-        .from("income")
-        .insert({
-          user_id: userId,
-          amount: Number(amount.toFixed(2)),
-          source,
-          date: validDate,
-          notes: sanitizedNotes,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error("Income insert error:", error);
-        return `Error: Failed to add income: Database error`;
-      }
-
-      return `Success: Added $${amount.toFixed(
-        2
-      )} from ${source} on ${validDate}`;
+      if (error) return `Error: Failed to add income`;
+      return `Success: Added ₦${amount.toLocaleString()} from ${source} on ${validDate}`;
     }
 
     if (functionName === "update_goal_progress") {
@@ -283,191 +216,112 @@ async function executeFunctionCall(
       const amountError = validateAmount(
         Math.abs(amount_to_add),
         SECURITY_LIMITS.MAX_GOAL_UPDATE,
-        "Goal update"
+        "Goal update",
       );
-      if (amountError) {
-        return `Error: ${amountError}`;
-      }
+      if (amountError) return `Error: ${amountError}`;
 
-      const sanitizedGoalName = String(goal_name).trim().substring(0, 100);
-      if (!sanitizedGoalName) {
-        return `Error: Goal name cannot be empty`;
-      }
-
-      const { data: goals } = await client
+      const { data: goals } = await supabase
         .from("goals")
         .select("*")
         .eq("user_id", userId)
         .eq("status", "active");
 
-      if (!goals || goals.length === 0) {
-        return `Error: You don't have any active goals yet. Create a goal first`;
-      }
+      if (!goals || goals.length === 0) return `Error: No active goals found`;
 
-      let matchedGoal = goals.find(
-        (g: Goal) => g.name.toLowerCase() === sanitizedGoalName.toLowerCase()
+      const matchedGoal = goals.find(
+        (g: Goal) =>
+          g.name.toLowerCase().includes(goal_name.toLowerCase()) ||
+          goal_name.toLowerCase().includes(g.name.toLowerCase()),
       );
 
       if (!matchedGoal) {
-        matchedGoal = goals.find(
-          (g: Goal) =>
-            g.name.toLowerCase().includes(sanitizedGoalName.toLowerCase()) ||
-            sanitizedGoalName.toLowerCase().includes(g.name.toLowerCase())
-        );
-      }
-
-      if (!matchedGoal) {
-        const availableGoals = goals.map((g: Goal) => g.name).join(", ");
-        return `Error: Could not find goal "${sanitizedGoalName}". Your active goals are: ${availableGoals}`;
+        return `Error: Could not find goal "${goal_name}". Your goals: ${goals.map((g: Goal) => g.name).join(", ")}`;
       }
 
       const newAmount = matchedGoal.current_amount + amount_to_add;
+      if (newAmount < 0)
+        return `Error: Cannot subtract more than current balance`;
 
-      if (newAmount < 0) {
-        return `Error: Cannot subtract $${Math.abs(amount_to_add)} from "${
-          matchedGoal.name
-        }" - current balance is only $${matchedGoal.current_amount}`;
-      }
-
-      if (newAmount > matchedGoal.target_amount * 1.5) {
-        return `Warning: Adding $${amount_to_add} would bring "${matchedGoal.name}" to $${newAmount}, which is 50% over your target of $${matchedGoal.target_amount}. Please confirm if this is correct.`;
-      }
-
-      const { error } = await client
+      const { error } = await supabase
         .from("goals")
         .update({
           current_amount: Number(newAmount.toFixed(2)),
           status:
-            newAmount >= matchedGoal.target_amount
-              ? "completed"
-              : matchedGoal.status,
+            newAmount >= matchedGoal.target_amount ? "completed" : "active",
         })
-        .eq("id", matchedGoal.id)
-        .eq("user_id", userId);
+        .eq("id", matchedGoal.id);
 
-      if (error) {
-        console.error("Goal update error:", error);
-        return `Error: Failed to update goal: Database error`;
-      }
+      if (error) return `Error: Failed to update goal`;
 
       const progress = Math.round(
-        (newAmount / matchedGoal.target_amount) * 100
+        (newAmount / matchedGoal.target_amount) * 100,
       );
-      const statusNote =
-        newAmount >= matchedGoal.target_amount ? " Goal completed!" : "";
-
-      return `Success: Added $${amount_to_add.toFixed(2)} to "${
-        matchedGoal.name
-      }". New progress: ${progress}% ($${newAmount.toFixed(2)}/$${
-        matchedGoal.target_amount
-      })${statusNote}`;
+      return `Success: Added ₦${amount_to_add.toLocaleString()} to "${matchedGoal.name}". Progress: ${progress}%`;
     }
 
-    return `Error: Unknown function: ${functionName}`;
+    return `Error: Unknown function`;
   } catch (error) {
-    console.error(`Function execution error in ${functionName}:`, error);
-    return `Error: Failed to execute ${functionName}`;
+    return `Error: Function execution failed`;
   }
 }
 
 function buildSystemPrompt(context: UserContext): string {
-  return `You are a helpful financial advisor for StashAI with the ability to take actions using available functions.
+  return `You are StashAI, a friendly financial assistant for people with inconsistent income (freelancers, gig workers).
 
-AVAILABLE FUNCTIONS YOU MUST USE:
-- add_income: When user mentions earning/receiving money, call this function
-- update_goal_progress: When user mentions adding money to a goal, call this function
+FUNCTIONS AVAILABLE:
+- add_income: When user mentions earning money
+- update_goal_progress: When user adds money to a goal
 
-CONFIRMATION FLOW:
-1. When user requests an action, ask for confirmation before executing
-2. When user responds with affirmative (yes, proceed, go ahead, do it, sure, ok), IMMEDIATELY call the function
-3. When user responds with negative (no, cancel, don't, stop), DO NOT call function and acknowledge cancellation
-4. When user response is unclear (maybe, not sure, let me think), ask for clarification
+Current Financial Snapshot:
+- 30-day income: ₦${context.totalIncome.toLocaleString()}
+- Income entries: ${context.incomeCount}
+- Active goals: ${context.goals.length}
 
-Examples:
-User: "I earned $600 from crypto"
-You: "I'll add $600 from crypto to your income. Should I proceed?"
-User: "Yes" / "Go ahead" / "Do it"
-You: [CALL add_income function]
+${context.goals.length > 0 ? `Goals:\n${context.goals.map((g) => `- ${g.name}: ₦${g.current.toLocaleString()} / ₦${g.target.toLocaleString()} (${g.progress}%)`).join("\n")}` : "No active goals yet"}
 
-User: "No" / "Cancel"
-You: "Understood, I won't add that. Let me know if you change your mind."
-
-Current User's Financial Situation:
-- Total income in last 30 days: $${context.totalIncome}
-- Active savings goals: ${context.goals.length}
-
-${
-  context.goals.length > 0
-    ? `Active Goals:\n${context.goals
-        .map(
-          (g) =>
-            `- ${g.name}: $${g.current} / $${g.target} (${
-              g.progress
-            }% complete)${g.deadline ? ` - Deadline: ${g.deadline}` : ""}`
-        )
-        .join("\n")}`
-    : "No active goals yet"
-}
-
-SECURITY RULES:
-- Amounts must be under $100k for income, under $50k for goal updates
-- If amount seems unusually large (over $10k), ask for confirmation first
-- Maximum 3 function calls per message
-- NEVER call functions without confirmation for amounts over $1000`;
+Keep responses concise. Use Naira (₦) for currency. Be encouraging and helpful!`;
 }
 
 export async function POST(
-  request: NextRequest
+  request: NextRequest,
 ): Promise<NextResponse<ApiResponse<ChatResponse>>> {
   try {
-    const result = await getUserAndClient(request);
-    if (!result) {
+    const auth = await getAuthenticatedUser();
+    if (!auth) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
-    const { user, client } = result;
+    const { user, supabase } = auth;
     const body = (await request.json()) as ChatRequestInput;
     const { message, conversationHistory } = body;
 
-    if (!message || message.trim() === "") {
+    if (!message?.trim() || message.length > 1000) {
       return NextResponse.json(
-        { success: false, error: "Message is required" },
-        { status: 400 }
+        { success: false, error: "Invalid message" },
+        { status: 400 },
       );
     }
 
-    if (message.length > 1000) {
-      return NextResponse.json(
-        { success: false, error: "Message too long (max 1000 characters)" },
-        { status: 400 }
-      );
-    }
-
-    const context: UserContext = await getUserContext(client, user.id);
+    const context = await getUserContext(supabase, user.id);
     const systemPrompt = buildSystemPrompt(context);
 
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
       tools: [{ functionDeclarations: functions }],
-      toolConfig: {
-        functionCallingConfig: {
-          mode: "AUTO",
-        },
+    });
+
+    const conversationContents: any[] = [
+      { role: "user", parts: [{ text: systemPrompt }] },
+      {
+        role: "model",
+        parts: [{ text: "I'm StashAI, ready to help with your finances!" }],
       },
-    });
+    ];
 
-    let conversationContents: any[] = [];
-
-    conversationContents.push({
-      role: "user",
-      parts: [{ text: systemPrompt }],
-    });
-
-    // Add previous conversation if provided
-    if (conversationHistory && conversationHistory.length > 0) {
+    if (conversationHistory?.length) {
       conversationHistory.forEach((msg) => {
         conversationContents.push({
           role: msg.role === "user" ? "user" : "model",
@@ -476,37 +330,25 @@ export async function POST(
       });
     }
 
-    conversationContents.push({
-      role: "user",
-      parts: [{ text: message }],
-    });
+    conversationContents.push({ role: "user", parts: [{ text: message }] });
 
     let response = await model.generateContent({
       contents: conversationContents,
     });
-
-    let aiMessage = "";
-    let functionResults: string[] = [];
-
     const functionCalls = response.response.functionCalls();
 
-    if (functionCalls && functionCalls.length > 0) {
-      if (functionCalls.length > SECURITY_LIMITS.MAX_ACTIONS_PER_MESSAGE) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Too many actions requested (max ${SECURITY_LIMITS.MAX_ACTIONS_PER_MESSAGE} per message)`,
-          },
-          { status: 400 }
-        );
-      }
+    if (functionCalls?.length) {
+      const functionResults: string[] = [];
 
-      for (const call of functionCalls) {
+      for (const call of functionCalls.slice(
+        0,
+        SECURITY_LIMITS.MAX_ACTIONS_PER_MESSAGE,
+      )) {
         const result = await executeFunctionCall(
           call.name,
           call.args,
-          client,
-          user.id
+          supabase,
+          user.id,
         );
         functionResults.push(result);
       }
@@ -531,55 +373,54 @@ export async function POST(
       });
     }
 
-    aiMessage =
-      response.response.text() || "Sorry, I could not generate a response.";
+    const aiMessage =
+      response.response.text() || "Sorry, I couldn't generate a response.";
 
-    // Save to chat history
-    await client.from("chat_history").insert([
+    // Save chat history
+    await supabase.from("chat_history").insert([
       {
         user_id: user.id,
         message,
-        role: "user" as const,
+        role: "user",
         timestamp: new Date().toISOString(),
       },
       {
         user_id: user.id,
         message: aiMessage,
-        role: "assistant" as const,
+        role: "assistant",
         timestamp: new Date().toISOString(),
       },
     ]);
 
     return NextResponse.json({
       success: true,
-      data: { message: aiMessage, role: "assistant" as const },
+      data: { message: aiMessage, role: "assistant" },
     });
   } catch (error) {
     console.error("Chat error:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to process chat message" },
-      { status: 500 }
+      { success: false, error: "Failed to process message" },
+      { status: 500 },
     );
   }
 }
 
 export async function GET(
-  request: NextRequest
+  request: NextRequest,
 ): Promise<NextResponse<ApiResponse<ChatMessage[]>>> {
   try {
-    const result = await getUserAndClient(request);
-    if (!result) {
+    const auth = await getAuthenticatedUser();
+    if (!auth) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
-    const { user, client } = result;
-    const { searchParams } = request.nextUrl;
-    const limit: number = parseInt(searchParams.get("limit") || "50");
+    const { user, supabase } = auth;
+    const limit = parseInt(request.nextUrl.searchParams.get("limit") || "50");
 
-    const { data, error } = await client
+    const { data, error } = await supabase
       .from("chat_history")
       .select("*")
       .eq("user_id", user.id)
@@ -588,16 +429,16 @@ export async function GET(
 
     if (error) {
       return NextResponse.json(
-        { success: false, error: "Failed to fetch chat history" },
-        { status: 500 }
+        { success: false, error: "Failed to fetch history" },
+        { status: 500 },
       );
     }
 
     return NextResponse.json({ success: true, data: data?.reverse() || [] });
   } catch (error) {
     return NextResponse.json(
-      { success: false, error: "Internal server error" },
-      { status: 500 }
+      { success: false, error: "Server error" },
+      { status: 500 },
     );
   }
 }

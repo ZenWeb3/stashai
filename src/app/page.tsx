@@ -51,7 +51,7 @@ export default function BalancedHero() {
           <Zap className="text-[#CCFF00] w-5 h-5 fill-[#CCFF00]" />
           <span className="font-bold tracking-tighter text-xl">StashAI</span>
         </div>
-      <Link href="/auth" className="bg-[#CCFF00] text-black px-4 py-2 rounded-lg font-semibold text-sm hover:shadow-[0_0_20px_rgba(204,255,0,0.4)] transition-all hover:scale-105 active:scale-95 flex items-center gap-1">
+      <Link href="/auth/signup" className="bg-[#CCFF00] text-black px-4 py-2 rounded-lg font-semibold text-sm hover:shadow-[0_0_20px_rgba(204,255,0,0.4)] transition-all hover:scale-105 active:scale-95 flex items-center gap-1">
         Sign Up
       </Link>
       </nav>
@@ -79,13 +79,13 @@ export default function BalancedHero() {
           </p>
 
           <div className="flex flex-col items-center gap-6">
-           <Link href="/auth" className="bg-[#CCFF00] text-black px-8 sm:px-12 py-4 sm:py-5 rounded-xl font-bold text-lg sm:text-xl hover:shadow-[0_0_40px_rgba(204,255,0,0.4)] transition-all hover:scale-105 active:scale-95 flex items-center gap-2">
+           <Link href="/auth/signin" className="bg-[#CCFF00] text-black px-8 sm:px-12 py-4 sm:py-5 rounded-xl font-bold text-lg sm:text-xl hover:shadow-[0_0_40px_rgba(204,255,0,0.4)] transition-all hover:scale-105 active:scale-95 flex items-center gap-2">
               Get Started for Free <ChevronRight size={20} />
             </Link>
 
             <div className="font-mono text-[10px] text-gray-600 uppercase tracking-[0.5em] flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-[#CCFF00] animate-pulse" />
-              Powered by Claude 3.5 + Opik
+              Powered by Gemini AI + Opik
             </div>
           </div>
         </motion.div>

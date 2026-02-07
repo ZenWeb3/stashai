@@ -1,52 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase, createSupabaseClient } from "@/lib/supabase";
-
-async function getUserAndClient(request: NextRequest) {
-  const authHeader = request.headers.get("authorization");
-
-  if (!authHeader) {
-    return null;
-  }
-
-  const token = authHeader.replace("Bearer ", "");
-
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser(token);
-
-  if (error || !user) {
-    return null;
-  }
-
-  const userClient = createSupabaseClient(token);
-
-  return { user, client: userClient };
-}
+import { getAuthenticatedUser } from "@/lib/supabase/auth-helper";
 
 export async function GET(request: NextRequest) {
   try {
-    const result = await getUserAndClient(request);
+    const auth = await getAuthenticatedUser();
 
-    if (!result) {
+    if (!auth) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
       );
     }
 
-    const { user, client } = result;
+    const { user, supabase } = auth;
 
     const { searchParams } = request.nextUrl;
     const status = searchParams.get("status");
 
-    let query = client
+    let query = supabase
       .from("goals")
       .select("*")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
-    // Apply status filter if provided
     if (status) {
       query = query.eq("status", status);
     }
@@ -61,7 +37,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Calculate progress percentage for each goal
     const goalsWithProgress = data.map((goal) => ({
       ...goal,
       progress:
@@ -85,16 +60,16 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const result = await getUserAndClient(request);
+    const auth = await getAuthenticatedUser();
 
-    if (!result) {
+    if (!auth) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
       );
     }
 
-    const { user, client } = result;
+    const { user, supabase } = auth;
 
     const body = await request.json();
     const { name, target_amount, current_amount, deadline } = body;
@@ -120,7 +95,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data, error } = await client
+    const { data, error } = await supabase
       .from("goals")
       .insert({
         user_id: user.id,
@@ -150,10 +125,7 @@ export async function POST(request: NextRequest) {
     };
 
     return NextResponse.json(
-      {
-        success: true,
-        data: goalWithProgress,
-      },
+      { success: true, data: goalWithProgress },
       { status: 201 }
     );
   } catch (error) {
