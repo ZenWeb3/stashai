@@ -12,9 +12,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { WaitingState, VerifiedState } from "@/components";
+import { OTPVerification, VerifiedState } from "@/components/auth";
 
-type AuthState = "form" | "waiting" | "verified";
+type AuthState = "form" | "otp" | "verified";
 
 export default function SignupPage() {
   const searchParams = useSearchParams();
@@ -77,14 +77,11 @@ export default function SignupPage() {
         }),
       });
 
-      console.log("Response status:", res.status); // Debug
-
       const data = await res.json();
-      console.log("Response data:", data); // Debug
 
       if (data.success) {
         if (data.data?.emailConfirmationRequired) {
-          setAuthState("waiting");
+          setAuthState("otp"); // ✅ Go to OTP screen
         } else if (data.data?.session) {
           window.location.href = "/dashboard";
         }
@@ -109,24 +106,55 @@ export default function SignupPage() {
     }
   };
 
-  const handleResendEmail = async () => {
+  const handleVerifyOTP = async (otp: string) => {
     setIsLoading(true);
     setError("");
+
     try {
-      const res = await fetch("/api/auth/resend-confirmation", {
+      const res = await fetch("/api/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: formData.email,
+          otp,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success && data.data?.session) {
+        // ✅ User is logged in, go to dashboard (middleware redirects to onboarding)
+        window.location.href = "/dashboard";
+      } else if (data.success) {
+        // Session not returned, go to signin
+        window.location.href = "/auth/signin?verified=true";
+      } else {
+        setError(data.error || "Invalid code. Please try again.");
+      }
+    } catch (err) {
+      setError("Failed to verify code. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendOTP = async () => {
+    setError("");
+
+    try {
+      const res = await fetch("/api/auth/resend-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: formData.email }),
       });
 
       const data = await res.json();
+
       if (!data.success) {
-        setError(data.error || "Failed to resend email");
+        setError(data.error || "Failed to resend code");
       }
     } catch (err) {
-      setError("Failed to resend confirmation email");
-    } finally {
-      setIsLoading(false);
+      setError("Failed to resend code");
     }
   };
 
@@ -184,13 +212,14 @@ export default function SignupPage() {
       {/* Main Content */}
       <main className="relative z-10 flex-1 flex items-center justify-center px-6 py-12">
         <AnimatePresence mode="wait">
-          {/* WAITING STATE */}
-          {authState === "waiting" && (
-            <WaitingState
+          {/* OTP STATE */}
+          {authState === "otp" && (
+            <OTPVerification
               email={formData.email}
               isLoading={isLoading}
               error={error}
-              onResendEmail={handleResendEmail}
+              onVerify={handleVerifyOTP}
+              onResend={handleResendOTP}
               onBack={() => {
                 setAuthState("form");
                 setError("");

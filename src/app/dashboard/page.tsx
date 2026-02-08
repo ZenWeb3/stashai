@@ -398,7 +398,7 @@ const handleSendMessage = async (e: React.FormEvent) => {
 
           <div className="flex items-center gap-2 font-mono text-[10px] text-gray-600 uppercase tracking-wider">
             <Sparkles size={12} className="text-[#CCFF00]" />
-            <span className="hidden sm:inline">Powered by Claude</span>
+            <span className="hidden sm:inline">Powered by Gemini</span>
           </div>
         </header>
 

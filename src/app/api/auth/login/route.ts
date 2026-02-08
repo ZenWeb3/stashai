@@ -5,23 +5,23 @@ import { validateEmail } from "@/lib/validation";
 
 export async function POST(request: NextRequest) {
   try {
-    const ip =
-      request.headers.get("x-forwarded-for")?.split(",")[0] ||
-      request.headers.get("x-real-ip") ||
-      "unknown";
+    // const ip =
+    //   request.headers.get("x-forwarded-for")?.split(",")[0] ||
+    //   request.headers.get("x-real-ip") ||
+    //   "unknown";
 
-    // Stricter rate limit for login (prevent brute force)
-    const rateLimitResult = checkRateLimit(`login:${ip}`);
-    if (!rateLimitResult.allowed) {
-      const minutes = Math.ceil(rateLimitResult.resetIn / 60000);
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Too many login attempts. Try again in ${minutes} minutes.`,
-        },
-        { status: 429 },
-      );
-    }
+    // // Stricter rate limit for login (prevent brute force)
+    // const rateLimitResult = checkRateLimit(`login:${ip}`);
+    // if (!rateLimitResult.allowed) {
+    //   const minutes = Math.ceil(rateLimitResult.resetIn / 60000);
+    //   return NextResponse.json(
+    //     {
+    //       success: false,
+    //       error: `Too many login attempts. Try again in ${minutes} minutes.`,
+    //     },
+    //     { status: 429 },
+    //   );
+    // }
 
     const body = await request.json();
     const { email, password } = body;

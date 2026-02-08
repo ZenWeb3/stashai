@@ -320,7 +320,7 @@ export async function POST(
         parts: [{ text: "I'm StashAI, ready to help with your finances!" }],
       },
     ];
-
+5
     if (conversationHistory?.length) {
       conversationHistory.forEach((msg) => {
         conversationContents.push({
