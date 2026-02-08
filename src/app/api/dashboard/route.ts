@@ -1,35 +1,20 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import type { ApiResponse } from "@/types";
+import { NextResponse } from "next/server";
+import { getAuthenticatedUser } from "@/lib/supabase/auth-helper";
 
-interface DashboardStats {
-  totalIncome: number;
-  incomeCount: number;
-  totalSaved: number;
-  activeGoalsCount: number;
-  completedGoalsCount: number;
-  savingsRate: number;
-  recentIncome: any[];
-  topSource: string | null;
-}
-
-export async function GET(
-  request: NextRequest
-): Promise<NextResponse<ApiResponse<DashboardStats>>> {
+export async function GET() {
   try {
-    const supabase = await createClient();
-    
-    // Get user from session (cookies handle auth automatically)
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const auth = await getAuthenticatedUser();
 
-    if (authError || !user) {
+    if (!auth) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
-    // Now use the same client — RLS will filter by user automatically
+    const { user, supabase } = auth;
+
+    // Get 30-day income
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
@@ -42,55 +27,52 @@ export async function GET(
 
     const totalIncome =
       incomeData?.reduce((sum, income) => sum + Number(income.amount), 0) || 0;
-    const incomeCount = incomeData?.length || 0;
 
-    // Calculate top source
-    const sourceCounts: Record<string, number> = {};
-    incomeData?.forEach((income) => {
-      sourceCounts[income.source] =
-        (sourceCounts[income.source] || 0) + Number(income.amount);
-    });
-    const topSource =
-      Object.keys(sourceCounts).length > 0
-        ? Object.entries(sourceCounts).sort((a, b) => b[1] - a[1])[0][0]
-        : null;
-
-    // Fetch goals
+    // Get all goals
     const { data: goalsData } = await supabase
       .from("goals")
       .select("*")
-      .eq("user_id", user.id);
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
 
-    const activeGoalsCount =
-      goalsData?.filter((g) => g.status === "active").length || 0;
-    const completedGoalsCount =
-      goalsData?.filter((g) => g.status === "completed").length || 0;
-    const totalSaved =
-      goalsData?.reduce((sum, goal) => sum + Number(goal.current_amount), 0) || 0;
+    const activeGoals = goalsData?.filter((g) => g.status === "active") || [];
+    const completedGoals =
+      goalsData?.filter((g) => g.status === "completed") || [];
 
-    const savingsRate =
-      totalIncome > 0 ? Math.round((totalSaved / totalIncome) * 100) : 0;
+    const totalSaved = activeGoals.reduce(
+      (sum, goal) => sum + Number(goal.current_amount),
+      0,
+    );
 
-    const recentIncome = incomeData?.slice(0, 5) || [];
+    // ✅ Calculate available balance
+    const availableBalance = totalIncome - totalSaved;
 
     return NextResponse.json({
       success: true,
       data: {
         totalIncome,
-        incomeCount,
+        incomeCount: incomeData?.length || 0,
         totalSaved,
-        activeGoalsCount,
-        completedGoalsCount,
-        savingsRate,
-        recentIncome,
-        topSource,
+        availableBalance, // ✅ Add this
+        activeGoals: activeGoals.length,
+        completedGoals: completedGoals.length,
+        goals: activeGoals.map((g) => ({
+          id: g.id,
+          name: g.name,
+          target_amount: g.target_amount,
+          current_amount: g.current_amount,
+          deadline: g.deadline,
+          status: g.status,
+          progress: Math.round((g.current_amount / g.target_amount) * 100),
+        })),
+        recentIncome: incomeData?.slice(0, 5) || [],
       },
     });
   } catch (error) {
     console.error("Dashboard error:", error);
     return NextResponse.json(
       { success: false, error: "Failed to fetch dashboard data" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

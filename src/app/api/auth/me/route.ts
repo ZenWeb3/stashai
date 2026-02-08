@@ -4,10 +4,16 @@ import { NextResponse } from "next/server";
 export async function GET() {
   try {
     const supabase = await createClient();
-    const { data: { user }, error } = await supabase.auth.getUser();
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: "Not authenticated" },
+        { status: 401 },
+      );
     }
 
     return NextResponse.json({
@@ -16,9 +22,13 @@ export async function GET() {
         id: user.id,
         email: user.email,
         full_name: user.user_metadata?.full_name || null,
+        user_metadata: user.user_metadata,
       },
     });
   } catch (error) {
-    return NextResponse.json({ success: false, error: "Server error" }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: "Server error" },
+      { status: 500 },
+    );
   }
 }

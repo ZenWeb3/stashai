@@ -31,13 +31,6 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
 
-  // ✅ Debug logging
-  console.log("🔵 Middleware:", {
-    pathname,
-    hasUser: !!user,
-    onboardingCompleted: user?.user_metadata?.onboarding_completed,
-  });
-
   // Skip static files and API routes
   if (
     pathname.startsWith("/_next") ||
@@ -53,7 +46,6 @@ export async function updateSession(request: NextRequest) {
       pathname.startsWith("/dashboard") ||
       pathname.startsWith("/onboarding")
     ) {
-      console.log("🔴 Not logged in, redirecting to signin");
       const url = request.nextUrl.clone();
       url.pathname = "/auth/signin";
       return NextResponse.redirect(url);
@@ -66,7 +58,6 @@ export async function updateSession(request: NextRequest) {
 
   // Going to dashboard but hasn't completed onboarding
   if (pathname.startsWith("/dashboard") && !onboardingCompleted) {
-    console.log("🟡 Redirecting to onboarding");
     const url = request.nextUrl.clone();
     url.pathname = "/onboarding";
     return NextResponse.redirect(url);
@@ -74,7 +65,6 @@ export async function updateSession(request: NextRequest) {
 
   // Going to onboarding but already completed
   if (pathname.startsWith("/onboarding") && onboardingCompleted) {
-    console.log("🟢 Redirecting to dashboard - onboarding done");
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);

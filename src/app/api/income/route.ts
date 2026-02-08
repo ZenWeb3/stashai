@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
     if (!auth) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
       console.error("Database error:", error);
       return NextResponse.json(
         { success: false, error: "Failed to fetch income" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
     console.error("Unexpected error:", error);
     return NextResponse.json(
       { success: false, error: "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     if (!auth) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -77,22 +77,34 @@ export async function POST(request: NextRequest) {
     if (!amount || !source || !date) {
       return NextResponse.json(
         { success: false, error: "Amount, source, and date are required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (amount <= 0) {
       return NextResponse.json(
         { success: false, error: "Amount must be positive" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const validSources = ["hackathon", "bounty", "freelance", "crypto", "other"];
+    const validSources = [
+      "hackathon",
+      "bounty",
+      "freelance",
+      "crypto",
+      "other",
+      "salary",
+      "business",
+      "investment",
+    ];
     if (!validSources.includes(source)) {
       return NextResponse.json(
-        { success: false, error: `Source must be one of: ${validSources.join(", ")}` },
-        { status: 400 }
+        {
+          success: false,
+          error: `Source must be one of: ${validSources.join(", ")}`,
+        },
+        { status: 400 },
       );
     }
 
@@ -112,19 +124,16 @@ export async function POST(request: NextRequest) {
       console.error("Database error:", error);
       return NextResponse.json(
         { success: false, error: "Failed to create income entry" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
-    return NextResponse.json(
-      { success: true, data },
-      { status: 201 }
-    );
+    return NextResponse.json({ success: true, data }, { status: 201 });
   } catch (error) {
     console.error("Unexpected error:", error);
     return NextResponse.json(
       { success: false, error: "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

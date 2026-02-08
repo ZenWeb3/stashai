@@ -13,7 +13,10 @@ export type IncomeSource =
   | "bounty"
   | "freelance"
   | "crypto"
-  | "other";
+  | "other"
+  | "salary"
+  | "business"
+  | "investment";
 
 export interface Income {
   id: string;

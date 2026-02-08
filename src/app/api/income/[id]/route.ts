@@ -79,6 +79,9 @@ export async function PUT(
         "freelance",
         "crypto",
         "other",
+        "salary",
+        "business",
+        "investment",
       ];
       if (!validSources.includes(source)) {
         return NextResponse.json(
