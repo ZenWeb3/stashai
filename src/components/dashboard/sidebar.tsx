@@ -160,7 +160,7 @@ export function Sidebar({
       )}
 
       {/* Goals */}
-      {!isCollapsed && stats?.goals?.length > 0 && (
+      {!isCollapsed && stats && stats.goals && stats.goals.length > 0 && (
         <div className="px-4 mb-4">
           <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">
             Active Goals

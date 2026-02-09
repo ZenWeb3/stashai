@@ -144,11 +144,7 @@ export function ChatPanel({
 
       {/* Input */}
       <div className="shrink-0 border-t border-white/10 bg-black/30 backdrop-blur-md">
-        <ChatInput
-          onSend={onSendMessage}
-          isLoading={isLoading || isTyping}
-          placeholder="Message StashAI..."
-        />
+        <ChatInput onSend={onSendMessage} isLoading={isLoading || isTyping} />
       </div>
     </div>
   );

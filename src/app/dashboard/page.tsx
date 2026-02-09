@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { DashboardLayout, ChatPanel } from "@/components/dashboard";
+import { DashboardLayout, ChatPanel } from "@/components/dashboard/index";
 
 interface Message {
   id: string;
