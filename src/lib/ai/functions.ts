@@ -137,10 +137,10 @@ export async function executeFunctionCall(
         .eq("status", "active");
 
       const totalIncome =
-        incomeData?.reduce((sum: number, i) => sum + Number(i.amount), 0) || 0;
+        incomeData?.reduce((sum: number, i:any) => sum + Number(i.amount), 0) || 0;
       const totalSaved =
         goalsData?.reduce(
-          (sum: number, g) => sum + Number(g.current_amount),
+          (sum: number, g:any) => sum + Number(g.current_amount),
           0,
         ) || 0;
       const availableBalance = totalIncome - totalSaved;
