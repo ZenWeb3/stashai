@@ -137,9 +137,12 @@ export async function executeFunctionCall(
         .eq("status", "active");
 
       const totalIncome =
-        incomeData?.reduce((sum, i) => sum + Number(i.amount), 0) || 0;
+        incomeData?.reduce((sum: number, i) => sum + Number(i.amount), 0) || 0;
       const totalSaved =
-        goalsData?.reduce((sum, g) => sum + Number(g.current_amount), 0) || 0;
+        goalsData?.reduce(
+          (sum: number, g) => sum + Number(g.current_amount),
+          0,
+        ) || 0;
       const availableBalance = totalIncome - totalSaved;
 
       // ✅ Check if user has enough balance
