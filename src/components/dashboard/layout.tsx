@@ -3,10 +3,18 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardLayout({   children,
+  user: propUser,
+  stats: propStats,
+  onLogout: propOnLogout,
+}: { 
+  children: React.ReactNode;
+  user?: any;
+  stats?: any;
+  onLogout?: () => Promise<void>; }) {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
-  const [stats, setStats] = useState<any>(null);
+  const [user, setUser] = useState<any>(propUser || null);
+  const [stats, setStats] = useState<any>(propStats || null);
 
   const fetchData = useCallback(async () => {
     try {
